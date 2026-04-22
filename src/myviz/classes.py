@@ -1,10 +1,8 @@
 import glob
 import logging
 import xarray as xr
-import pandas as pd
-from .errors import MissingVariableError, MissingFilepathError, GridFileFormatError, TrackFileFormatError
-from .io import validate_filepaths
-from .spatial import standardize_coordinates
+from .err import MissingVariableError, MissingFilepathError, GridFileFormatError, TrackFileFormatError
+from .utils import validate_filepaths, parse_track, standardize_coordinates
 
 """
 This parses and creates standardized sets of data based on known possible inputs
@@ -43,19 +41,32 @@ class GridData:
         self.da = da
     
     def get_info(self):
-        logger.info(f"This is {self.name}.")
+        logger.info(f"This is {self.name}. Data: {self.da}")
 
 
 # Contains 1D data such as buoy tracks
 class TrackData:
-    def __init__(self, filepath, name='TrackData'):
+    def __init__(self, filepath, varname, name='TrackData'):
         self.name = name
         logger.info(f"[{self.name}] Initializing TrackData")
 
-        self.filelist = validate_filepaths(filepath, owner_name=self.name)
+        self.varname = varname
+        self.filepath = validate_filepaths(filepath, owner_name=self.name)[0]
 
-        self.ds = None
+        self.da = None
+        self._load_data()
+    
+    def _load_data(self):
+        logger.info(f"[{self.name}] Parsing track file: {self.filepath}")
+        ds = parse_track(self.filepath, owner_name=self.name)
 
+        da = ds[self.varname]
+        da = standardize_coordinates(da, owner_name=self.name)
+
+        self.da = da
+
+    def get_info(self):
+        logger.info(f"This is {self.name}. Data: {self.da}")
 
 # Contains single-point time series data
 class TimeSeriesData:
@@ -63,6 +74,9 @@ class TimeSeriesData:
         self.name = name
         logger.info(f"[{self.name}] Initializing TimeSeriesData")
 
-        self.filelist = validate_filepaths(filepath, owner_name=self.name)
+        self.filepath = validate_filepaths(filepath, owner_name=self.name)
 
-        self.ds = None
+        self.da = None
+    
+    def get_info(self):
+        logger.info(f"This is {self.name}. Data: {self.da}")
