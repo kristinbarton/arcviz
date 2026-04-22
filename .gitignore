@@ -1,0 +1,33 @@
+# Python core and build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Data & Outputs
+*.nc
+*.log
+*.png
+*.jpg
+plots/
+figures/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDEs & OS Files
+*.swp
+*.swo
+*~
+
+# VSCode Settings
+.vcode/
+.idea/
