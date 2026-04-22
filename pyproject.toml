@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "myviz"
+version = "0.1.0"
+dependencies = [
+    "xarray",
+    "pandas",
+    "numpy"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
