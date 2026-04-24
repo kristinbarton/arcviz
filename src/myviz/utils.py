@@ -51,7 +51,7 @@ def parse_track(filepath, owner_name="System"):
 
     return ds
 
-def standardize_coordinates(data, owner_name="System"):
+def standardize_coordinates(data, dateshift=False, varname=None, owner_name="System"):
     """
     Universally fixes coordinate names, lat/lon 0-360 wrapping, and radian to degree conversions.
     """
@@ -67,33 +67,46 @@ def standardize_coordinates(data, owner_name="System"):
            'ELAT':'lat',    'ELON':'lon', # iceh_*.nc
     }
 
-    if isinstance(data, (xr.Dataset, xr.DataArray)):
-
-        # For CICE data, we need to get the lat/lon corresponding to the variable
-        coords_string = data.encoding.get('coordinates') or data.attrs.get('coordinates')
-        if coords_string:
-            active_coords = data.encoding['coordinates'].split()
-        else:
-            active_coords = list(data.coords.keys())
-
-        coords_to_rename = {coord: rename_dict[coord] for coord in active_coords if coord in rename_dict}
-        data = data.rename(coords_to_rename)
-
-        # Fix radians to degrees conversion
-        for coord in ['lat', 'lon']:
-            if coord in data.coords:
-                units = data[coord].attrs.get('units', '').lower()
-                if 'rad' in units:
-                    data.coords[coord] = data.coords[coord] * (180.0/np.pi)
-                    data.coords[coord].attrs['units'] = 'degrees'
-
-        # Fix lon range
-        if 'lon' in data.coords and data.coords['lon'].max() > 180.0:
-            data.coords['lon'] = (data.coords['lon'] + 180) % 360 - 180
-            if data.coords['lon'].ndim == 1:
-                data = data.sortby('lon')
-
-        return data
-    
+    # For CICE data, we need to get the lat/lon corresponding to the variable
+    if isinstance(data, xr.Dataset):
+        if varname is None:
+            raise ValueError(f"[{owner_name}] When inputting xarray.Dataset type, varname must be specified.")
+        active_coords = data[varname].encoding['coordinates'].split() if data[varname].encoding.get('coordinates') else list(data[varname].coords.keys())
+    elif isinstance(data, xr.DataArray):
+        active_coords = data.encoding['coordinates'].split() if data.encoding.get('coordinates') else list(data.coords.keys())
     else:
-        raise TypeError(f"Coordinate standardizer cannot handle type: {type(data)}")
+        raise TypeError(f"[{owner_name}] Input to standardize_coordinates must be xarray.Dataset or xarray.DataArray type")
+
+    logger.debug(f"[{owner_name}] active coords = {active_coords}")
+
+    coords_to_rename = {coord: rename_dict[coord] for coord in active_coords if coord in rename_dict}
+    data = data.rename(coords_to_rename)
+
+    # Fix radians to degrees conversion
+    for coord in ['lat', 'lon']:
+        if coord in data.coords:
+            units = data[coord].attrs.get('units', '').lower()
+            if 'rad' in units:
+                data.coords[coord] = data.coords[coord] * (180.0/np.pi)
+                data.coords[coord].attrs['units'] = 'degrees'
+
+    # Fix lon range
+    if 'lon' in data.coords and data.coords['lon'].max() > 180.0:
+        data.coords['lon'] = (data.coords['lon'] + 180) % 360 - 180
+        if data.coords['lon'].ndim == 1:
+            data = data.sortby('lon')
+
+    # Enforce standard calendar type
+    if 'time' in data.coords:
+        if data['time'].dtype == 'O' or hasattr(data.indexes['time'], 'calendar'):
+            logger.debug("Converting non-standard cftime calendar to standard datetime64[ns].")
+            standard_times = pd.to_datetime(data.indexes['time'].astype(str))
+            data = data.assign_coords(time=standard_times)
+
+        if dateshift:
+            logger.debug("Applying 2-day shift")
+            new_time = data['time'] + pd.Timedelta(days=2)
+            data = data.assign_coords(time=new_time)
+
+    return data
+    
