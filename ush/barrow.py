@@ -12,11 +12,14 @@ def main(ufs_fpath, ufs_var, lnd_fpath, lnd_var, obs_fpath, obs_var, dateshift=F
     cafs_temps = arcviz.CAFSPointData(filepath=lnd_fpath, varname=lnd_var, name="CAFS 2m Temperature")
     obs_temps = arcviz.ObsPointData(filepath=obs_fpath, varname=obs_var, name="Obs 2m Temperature")
 
+    # Extract land-sea mask
+    mask_data = arcviz.GridData(filepath=ufs_fpath, varname='land', name="Land Mask")
+
     # Grab observations corresponding to UFS-Arctic/CAFS time range
     obs_sync_da = obs_temps.da.sel(time=ufs_temps.da.resample(time='1h').mean()['time'], method='nearest')
 
     # Exctract UFS-Arctic data at the observation location
-    ufs_track_da = extract_trajectory(ufs_temps.da, obs_temps.da, mode='follow', method='linear')
+    ufs_track_da = extract_trajectory(ufs_temps.da, obs_temps.da, mode='follow', method='nearest', mask_da=mask_data.da)
     ufs_track_da.name = "UFS-Arctic 2m Temp (Trajectory)"
 
     plot_track_comparison(
