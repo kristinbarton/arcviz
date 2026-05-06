@@ -3,7 +3,6 @@ import logging
 import numpy as np
 import pandas as pd
 import xarray as xr
-from .err import MissingFilepathError
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +15,7 @@ def validate_filepaths(filepath, owner_name="System"):
 
     if not matched_files:
         logger.error(f"[{owner_name}] File check failed. Zero files matched.")
-        raise MissingFilepathError(
-            f"No files found matching: '{filepath}'."
-        )
+        raise ValueError( f"No files found matching: '{filepath}'.")
 
     logger.debug(f"[{owner_name}] Found {len(matched_files)} file(s) matching pattern.")
 
@@ -51,6 +48,68 @@ def parse_track(filepath, owner_name="System"):
 
     return ds
 
+def parse_obs_points(filepath, varname, owner_name="System"):
+    """"
+    Parses text-based point observations and returns and xarray Dataset.
+    """
+
+    # List coordinates as needed in 0-360deg format
+    site_coords = {
+        'BRW': (71.3230, 203.3886)
+    }
+
+    logger.info(f"[{owner_name}] Parsing track file: {filepath}")
+
+    col_names = [ 'site', 'year', 'month', 'day', 'hour', 'wind_dir', 'wind_speed', 'wind_steadiness', 'pressure', 'tmp2m', 'tmp10m', 'tmp_top', 'rh', 'precip' ]
+    na_vals = { 'wind_dir': [-999], 'wind_speed': [-999.9], 'wind_steadiness': [-9], 'pressure': [-999.90, -999.9], 'tmp2m': [-999.9], 'tmp10m': [-999.9], 'tmp_top': [-999.9], 'rh': [-99], 'precip': [-99], }
+    unit_map = { 'wind_dir': 'degrees', 'wind_speed': 'm/s', 'wind_steadiness': '%', 'pressure': 'hPa', 'tmp2m': 'degC', 'tmp10m': 'degC', 'tmp_top': 'degC', 'rh': '%', 'precip': 'mm/hr', }
+
+    dfs = []
+
+    for f in filepath:
+        df = pd.read_csv(
+            f,
+            sep=r'\s+',
+            header=None,
+            names=col_names,
+            na_values=na_vals
+        )
+        dfs.append(df)
+
+    data = pd.concat(dfs, ignore_index=True)
+
+    data['time'] = pd.to_datetime(data[['year', 'month', 'day', 'hour']])
+    data = data.set_index('time').sort_index()
+
+    site_code = data['site'].iloc[0]
+    if site_code not in site_coords:
+        raise ValueError(f"Site code: '{site_code}' not found.")
+    
+    lat, lon = site_coords[site_code]
+
+    if varname not in data.columns:
+        raise ValueError(f"Variable '{varname}' not found. Available: {col_names[5:]}")
+
+    lat_arr = np.full(len(data.index), lat)
+    lon_arr = np.full(len(data.index), lon)
+    
+    da = xr.DataArray(
+        data=data[varname].values,
+        coords={
+            'time': data.index,
+            'lat': ('time', lat_arr),
+            'lon': ('time', lon_arr)
+        },
+        dims=['time'],
+        name=varname
+    )
+    da = da.assign_coords(site=site_code)
+
+    da.attrs['units'] = unit_map[varname]
+
+    return da
+
+
 def standardize_coordinates(data, dateshift=False, varname=None, owner_name="System"):
     """
     Universally fixes coordinate names, lat/lon 0-360 wrapping, and radian to degree conversions.
@@ -67,7 +126,7 @@ def standardize_coordinates(data, dateshift=False, varname=None, owner_name="Sys
            'ELAT':'lat',    'ELON':'lon', # iceh_*.nc
     }
 
-    # For CICE data, we need to get the lat/lon corresponding to the variable
+    # Check the coordinates needed for the given variable
     if isinstance(data, xr.Dataset):
         if varname is None:
             raise ValueError(f"[{owner_name}] When inputting xarray.Dataset type, varname must be specified.")
@@ -107,6 +166,12 @@ def standardize_coordinates(data, dateshift=False, varname=None, owner_name="Sys
             logger.debug("Applying 2-day shift")
             new_time = data['time'] + pd.Timedelta(days=2)
             data = data.assign_coords(time=new_time)
+
+    # If there are units of degC, convert it to units of K
+    if data.attrs.get('units') in ['degC', 'C', 'celsius', 'Celsius']:
+        data = data + 273.15
+        data.attrs['units'] = 'K'
+
 
     return data
     

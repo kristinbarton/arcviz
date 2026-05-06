@@ -1,8 +1,7 @@
 import glob
 import logging
 import xarray as xr
-from .err import MissingVariableError, MissingFilepathError, GridFileFormatError, TrackFileFormatError
-from .utils import validate_filepaths, parse_track, standardize_coordinates
+from .utils import validate_filepaths, parse_track, standardize_coordinates, parse_obs_points
 from .math import extract_trajectory, calculate_thickness_from_tends 
 
 """
@@ -49,9 +48,6 @@ class GridData:
 
         self.da = da
     
-    def get_info(self):
-        logger.info(f"This is {self.name}. Data: {self.da}")
-
     def extract_trajectory(self, track, mode='moving', method='nearest'):
         if self.track is not None:
             logger.warn(f"[{self.name}] Object already contains track data. Overwriting...")
@@ -90,9 +86,6 @@ class TrackData:
         data_daily = data.da.resample(time='1D').mean()
         self.synced_da = self.da.sel(time=data_daily['time'], method='nearest')
         self.synced_to = data.name
-
-    def get_info(self):
-        logger.info(f"This is {self.name}. Data: {self.da}")
 
 # Contains ice tendency data 
 class IceTendData:
@@ -136,5 +129,65 @@ class IceTendData:
         self.track = extract_trajectory(self, track, mode=mode, method=method)
         self.track.name = f"{self.name}"
 
-    def get_info(self):
-        logger.info(f"This is {self.name}. Data: {self.da}")
+class PointObsData:
+    def __init__(self, filepath, varname, name='PointData'):
+        self.name = name
+        logger.info(f"[{self.name}] Initializing PointObsData")
+        
+        self.varname = varname
+
+        self.da = None
+        self.synced_da = None
+
+        self.filelist = validate_filepaths(filepath, owner_name=self.name)
+        self._load_data()
+
+    def _load_data(self):
+        logger.info(f"[{self.name}] Parsing point observation data from: {self.filelist}")
+
+        da = parse_obs_points(self.filelist, self.varname, owner_name=self.name)
+        da = standardize_coordinates(da, dateshift=False, varname=self.varname, owner_name=self.name)
+
+        self.da = da
+
+    def sync_times(self, data):
+        if self.synced_da is not None:
+            logger.warn("f[{self.name}] Already contains time-synced data. Overwriting...")
+
+        freq = xr.infer_freq(self.da['time'][1:])
+        if freq is None:
+            raise ValueError(f"Could not infer time frequency from {data.da['time']}")
+
+        data_resampled = data.da.resample(time=freq).mean()
+        self.synced_da = self.da.sel(time=data_resampled['time'], method='nearest')
+        print(self.synced_da)
+        self.synced_to = data.name
+
+class CAFSPointData:
+    def __init__(self, filepath, varname, name='CAFSPointData', dateshift=False):
+        self.name = name
+        logger.info(f"[{self.name}] Initializing CAFS Point Data")
+
+        self.varname = varname
+        self.dateshift = dateshift
+        self.da = None
+        
+        self.filepath = validate_filepaths(filepath, owner_name=self.name)
+        self._load_data()
+
+    def _load_data(self):
+        logger.info(f"[{self.name}] Opening CAFS point dataset from: {self.filepath}")
+
+        ds = xr.open_mfdataset(
+                self.filepath, 
+                combine='nested', 
+                concat_dim='time',
+                parallel=True,
+                coords='minimal',
+                data_vars='minimal',
+                compat='override'
+        )
+        da = ds[self.varname]
+        da = standardize_coordinates(da, self.dateshift, owner_name=self.name)
+
+        self.da = da

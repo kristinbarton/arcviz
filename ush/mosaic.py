@@ -1,16 +1,16 @@
-import myviz
-from myviz.plots import plot_track_comparison
+import arcviz
+from arcviz.plots import plot_track_comparison
 import matplotlib.pyplot as plt
 import logging
 
 def main(ufs_fpath, ufs_var, cafs_fpath, cafs_var, mosaic_fpath, mosaic_var, dateshift=False, date=None):
 
-    ufs_data = myviz.GridData(filepath=ufs_fpath, varname=ufs_var, name="UFS-Arctic Ice Thickness")
-    cafs_data = myviz.GridData(filepath=cafs_fpath, varname=cafs_var, name="CAFS Ice Thickness", dateshift=dateshift)
-    mosaic_data = myviz.TrackData(filepath=mosaic_fpath, varname=mosaic_var, name="MOSAiC Ice Thickness Track")
-    thermo_tend_moving = myviz.IceTendData(filepath=ufs_fpath, trend_type="thermo", name="Thermo Ice Tendencies (along track)")
-    thermo_tend_stationary = myviz.IceTendData(filepath=ufs_fpath, trend_type="thermo", name="Thermo Ice Tendencies (all nearest neighbors)")
-    dyn_tend = myviz.IceTendData(filepath=ufs_fpath, trend_type="dynamic", name="Dynamic Ice Tendencies")
+    ufs_data = arcviz.GridData(filepath=ufs_fpath, varname=ufs_var, name="UFS-Arctic Ice Thickness")
+    cafs_data = arcviz.GridData(filepath=cafs_fpath, varname=cafs_var, name="CAFS Ice Thickness", dateshift=dateshift)
+    mosaic_data = arcviz.TrackData(filepath=mosaic_fpath, varname=mosaic_var, name="Ice Thickness")
+    thermo_tend_moving = arcviz.IceTendData(filepath=ufs_fpath, trend_type="thermo", name="Thermo Ice Tendencies (along track)")
+    thermo_tend_stationary = arcviz.IceTendData(filepath=ufs_fpath, trend_type="thermo", name="Thermo Ice Tendencies (all nearest neighbors)")
+    dyn_tend = arcviz.IceTendData(filepath=ufs_fpath, trend_type="dynamic", name="Dynamic Ice Tendencies")
 
     mosaic_data.sync_times(ufs_data)
 
