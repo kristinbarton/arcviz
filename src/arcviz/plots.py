@@ -1,21 +1,15 @@
 import logging
-import numpy as np
-import xarray as xr
 import matplotlib.pyplot as plt
 
 logger = logging.getLogger(__name__)
 
-def plot_track_comparison(track, grids, point, tends=None, output_path=None, title="Grid to Track Comparison", colors=None, ax=None, ylabel=None):
+def plot_track_comparison(track_da, grid_das=None, point_da=None, output_path=None, title="Grid to Track Comparison", colors=None, ax=None):
     """
-    Plots a time series comparing TrackData observations to one or more grid data objects
-    Must have 
+    Plots a time series comparing a main track DataArray to one or more grid/point DataArrays.
+    Inputs are expected to be xarray.DataArray objects.
     """
     logger.info("Generating time series plot...")
-
-    if track.synced_da is None:
-        raise ValueError(f"[{track.name}] Does not contain synced data")
-    else:
-        track_sync = track.synced_da
+    grid_das = grid_das or []
 
     if ax is None:
         fig, ax = plt.subplots(figsize=(12, 6))
@@ -23,10 +17,12 @@ def plot_track_comparison(track, grids, point, tends=None, output_path=None, tit
     else:
         fig = ax.figure
         created_fig = False
-
-    track_sync.plot(
+    
+    # Plot observation track data
+    track_da.plot.line(
+        x='time',
         ax=ax,
-        label=f'{track.name}',
+        label=track_da.name,
         color='black',
         linestyle='-',
         marker='o',
@@ -34,47 +30,44 @@ def plot_track_comparison(track, grids, point, tends=None, output_path=None, tit
         alpha=0.7,
     )
 
-    if point.da is not None:
-        point.da.isel(lat=0, lon=0).plot.line(
+    # Plot point data if provided 
+    if point_da is not None:
+        point_1d = point_da.isel(lat=0, lon=0) if 'lat' in point_da.dims else point_da
+        point_1d.plot.line(
             x='time',
             ax=ax,
-            color='#005f73',#'#ffA500',
+            color='#005f73',
             linestyle='-',
             marker='o',
             markersize=4,
             alpha=0.7,
-            label=f'{point.name}',
+            label=point_da.name
         )
 
 
-#    colors = ['#005f73', '#9b2226', '#ee9b00', '#0a9396']
     if colors is None:
         colors = ['#005f73', '#ee9b00', '#9b2226', '#0a9396', '#7b2cbf', '#bb3e03']
 
-    for i, grid in enumerate(grids):
-        if grid.track is not None:
-            gtrk = grid.track
-        else:
-            logger.warning(f"Skipping {grid.name}: No track data found")
-            continue
+    for i, gtrk_da in enumerate(grid_das):
+        c = colors[i % len(colors)]
 
-        if 'track_point' in gtrk.dims:
-            gtrk.where((gtrk != 0).compute(), drop=True).plot.line(
+        if 'track_point' in gtrk_da.dims:
+            gtrk_da.where((gtrk_da != 0).compute(), drop=True).plot.line(
                 x='time',
                 ax=ax,
-                color=colors[i],
+                color=c,
                 linestyle='--',
                 marker='.',
                 markersize=4,
                 alpha=0.7,
                 add_legend=False
             )
-            ax.plot([], [], color=colors[i], linestyle='--', label=f'{gtrk.name}')
+            ax.plot([], [], color=c, linestyle='--', label=gtrk_da.name)
         else:
-            gtrk.where((gtrk != 0).compute(), drop=True).plot(
+            gtrk_da.where((gtrk_da != 0).compute(), drop=True).plot(
                 ax=ax,
-                label=f'{gtrk.name}',
-                color=colors[i],
+                label=gtrk_da.name,
+                color=c,
                 linestyle='-',
                 marker='o',
                 markersize=4,
@@ -82,9 +75,10 @@ def plot_track_comparison(track, grids, point, tends=None, output_path=None, tit
             )
 
     ax.set_title(title, fontsize=14)
+    units = track_da.attrs.get('units', 'Unknown Units')
 
-    units = grids[0].track.attrs.get('units','m')
-    ax.set_ylabel(f"{track.da.name} ({units})", fontsize=12)
+    base_name = track_da.attrs.get('standard_name', track_da.name or 'Value')
+    ax.set_ylabel(f"{base_name} ({units})", fontsize=12)
     ax.set_xlabel(f"Time", fontsize=12)
 
     ax.grid(True, linestyle=':', alpha=0.6)
@@ -95,11 +89,7 @@ def plot_track_comparison(track, grids, point, tends=None, output_path=None, tit
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         logger.info(f"Plot saved as: {output_path}")
     elif created_fig:
-        logger.debug(f"[{title}] Showing from within routine")
         fig.autofmt_xdate()
         plt.show()
 
     return fig, ax
-
-def plot_point_obs():
-    pass

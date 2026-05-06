@@ -5,41 +5,45 @@ from scipy.spatial import KDTree
 
 logger = logging.getLogger(__name__)
 
-def extract_trajectory(grid, track, mode, method='nearest'):
+def extract_trajectory(grid_da, track_da, mode='follow', method='nearest'):
     """
-    Extracts model data along a moving observation track.
+    Extracts model data along a point or moving observation track.
+    Expects xarray.DataArray objects
+    Mode can be: 'follow' (follows along with track, each time point grabs a single cell)
+                 'all_neighbors' (grabs ALL cells along track at ALL time points)
+    (For point observations, use 'follow')
+    Method can be 'nearest' or 'linear'. Linear uses 4 nearest grid neighbors to track/point.
     """
-    logger.info(f"Extracting data from {grid.name} along {track.name} track...")
 
-    freq = xr.infer_freq(track.da['time'])
+    grid_name = grid_da.name or "Grid"
+    track_name = track_da.name or "Track"
+
+    logger.info(f"Extracting data from {grid_da.name} along {track_da.name} track...")
+
+    freq = xr.infer_freq(track_da['time'])
 
     if freq is None:
-        raise ValueError(f"Could not infer frequency from {track.da['time']}")
+        logger.warning(f"Could not infer frequency from track time, defaulting to 1D")
+        freq = '1D'
 
-    if isinstance(grid, xr.DataArray):
-        grid_resampled = grid.resample(time=freq).mean()
-    elif isinstance(grid.da, xr.Dataset):
-        grid_resampled = grid.da[grid.varname].resample(time=freq).mean()
-    elif isinstance(grid.da, xr.DataArray):
-        grid_resampled = grid.da.resample(time=freq).mean()
+    # Resample grid data to track frequency
+    grid_resampled = grid_da.resample(time=freq).mean()
 
-    if track.synced_da is None: 
-        track_sync = track.da.sel(time=grid_resampled['time'], method='nearest')
-    else:
-        track_sync = track.synced_da
+    # Grab only track times corresponding to grid data rangge
+    track_sync = track_da.sel(time=grid_resampled['time'], method='nearest')
 
     lat_coord = grid_resampled['lat']
     lon_coord = grid_resampled['lon']
 
     # For 1D coordinates, xarray can handle the remapping
     if lat_coord.ndim == 1:
-        if mode == 'moving':
+        if mode == 'follow':
             extracted = grid_resampled.sel(
                 lat=track_sync['lat'],
                 lon=track_sync['lon'],
                 method=method
             )
-        elif mode == 'stationary':
+        elif mode == 'all_neighbors':
             extracted = grid_resampled.sel(
                 lat=track_sync['lat'].rename({'time': 'track_point'}),
                 lon=track_sync['lon'].rename({'time': 'track_point'}),
@@ -81,12 +85,12 @@ def extract_trajectory(grid, track, mode, method='nearest'):
         if method == 'nearest':
             real_idx_flat = valid_idx_flat[idx_tmp]
             idx_j, idx_i = np.unravel_index(real_idx_flat, lat_coord.shape)
-            if mode == 'moving':
+            if mode == 'follow':
                 njda = xr.DataArray(idx_j, dims=['time'], coords={'time': track_sync['time']})
                 nida = xr.DataArray(idx_i, dims=['time'], coords={'time': track_sync['time']})
                 ntda = xr.DataArray(np.arange(len(track_sync['time'])), dims=['time'], coords={'time': track_sync['time']} )
                 extracted = grid_resampled.isel(time=ntda, **{dim_y: njda, dim_x: nida}) 
-            elif mode == 'stationary':
+            elif mode == 'all_neighbors':
                 njda = xr.DataArray(idx_j, dims=['track_point'])
                 nida = xr.DataArray(idx_i, dims=['track_point'])
                 extracted = grid_resampled.isel(**{dim_y: njda, dim_x: nida})
@@ -100,7 +104,7 @@ def extract_trajectory(grid, track, mode, method='nearest'):
             real_idx_flat = valid_idx_flat[idx_tmp]
             idx_j, idx_i = np.unravel_index(real_idx_flat, lat_coord.shape)
 
-            if mode == 'moving':
+            if mode == 'follow':
                 njda = xr.DataArray(idx_j, dims=['time', 'neighbor'])
                 nida = xr.DataArray(idx_i, dims=['time', 'neighbor'])
                 ntda = xr.DataArray(np.arange(len(track_sync['time'])), dims=['time'])
@@ -108,7 +112,7 @@ def extract_trajectory(grid, track, mode, method='nearest'):
 
                 extracted_neighbors = grid_resampled.isel(time=ntda, **{dim_y: njda, dim_x: nida})
             
-            elif mode == 'stationary':
+            elif mode == 'all_neighbors':
                 njda = xr.DataArray(idx_j, dims=['track_point', 'neighbor'])
                 nida = xr.DataArray(idx_i, dims=['track_point', 'neighbor'])
                 weights_da = xr.DataArray(weights, dims=['track_point', 'neighbor'])
@@ -120,9 +124,9 @@ def extract_trajectory(grid, track, mode, method='nearest'):
     else:
         raise ValueError(f"Unsupported coordinate dimensions: {lat_coord.ndim}D")
 
-    #extracted.name = f"{grid.varname}"
+    extracted.name = grid_name
 
-    logger.info(f"[extract_trajectory] idx = {idx_r}; jdx = {idx_j} ")
+    logger.debug(f"[extract_trajectory] Extracted data shape: {extracted.shape}")
 
     return extracted
 

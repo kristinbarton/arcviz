@@ -1,4 +1,4 @@
-from .classes import GridData, TrackData, IceTendData, PointObsData, CAFSPointData
+from .classes import GridData, TrackData, IceTendData, ObsPointData, CAFSPointData
 import logging
 
 logger = logging.getLogger(__name__)

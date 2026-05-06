@@ -9,7 +9,8 @@ dependencies = [
     "xarray",
     "pandas",
     "numpy",
-    "matplotlib"
+    "matplotlib",
+    "scipy"
 ]
 
 [tool.setuptools.packages.find]

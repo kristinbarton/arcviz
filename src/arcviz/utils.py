@@ -53,6 +53,8 @@ def parse_obs_points(filepath, varname, owner_name="System"):
     Parses text-based point observations and returns and xarray Dataset.
     """
 
+    logger.info(f"[{owner_name}] Parsing point observation files.")
+
     # List coordinates as needed in 0-360deg format
     site_coords = {
         'BRW': (71.3230, 203.3886)
